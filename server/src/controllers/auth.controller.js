@@ -1,4 +1,4 @@
-import { AuthMethod } from "@prisma/client";
+import { AuthMethod, Prisma } from "@prisma/client";
 import { z } from "zod";
 import prisma from "../utils/prisma.js";
 import { clearAuthCookie, generateToken, serializeUser, setAuthCookie } from "../utils/auth.js";
@@ -54,12 +54,27 @@ export async function verifyOtp(req, res) {
   });
 
   if (!user) {
-    user = await prisma.user.create({
-      data: {
-        authMethod,
-        mobile: normalizedFromToken,
-      },
-    });
+    try {
+      user = await prisma.user.create({
+        data: {
+          authMethod,
+          mobile: normalizedFromToken,
+        },
+      });
+    } catch (error) {
+      // Another concurrent request may have created the same user/mobile.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        user = await prisma.user.findFirst({
+          where: { mobile: normalizedIdentifier },
+        });
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  if (!user) {
+    return res.status(500).json({ message: "Unable to create or load user session" });
   }
 
   if (isOwnerMobile(normalizedIdentifier) && user.role !== "OWNER") {
@@ -72,13 +87,17 @@ export async function verifyOtp(req, res) {
   const token = generateToken(user);
   setAuthCookie(res, token);
 
-  await logAuditEvent({
-    actor: user,
-    action: AuditAction.AUTHENTICATED,
-    entityType: "USER",
-    entityId: user.id,
-    summary: `${user.mobile || "Unknown user"} authenticated with phone OTP`,
-  });
+  try {
+    await logAuditEvent({
+      actor: user,
+      action: AuditAction.AUTHENTICATED,
+      entityType: "USER",
+      entityId: user.id,
+      summary: `${user.mobile || "Unknown user"} authenticated with phone OTP`,
+    });
+  } catch (error) {
+    console.error("Audit log failed during verifyOtp", error);
+  }
 
   return res.json({
     message: "Authenticated",
