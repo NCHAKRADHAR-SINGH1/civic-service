@@ -25,9 +25,22 @@ function serializeUserWithAccess(user) {
 }
 
 export async function verifyOtp(req, res) {
-  const payload = verifyOtpSchema.parse(req.body);
+  const parsedPayload = verifyOtpSchema.safeParse(req.body);
+
+  if (!parsedPayload.success) {
+    return res.status(400).json({ message: "Invalid OTP verification payload" });
+  }
+
+  const payload = parsedPayload.data;
   const normalizedIdentifier = normalizeMobileNumber(payload.identifier);
-  const decodedToken = await verifyFirebaseIdToken(payload.firebaseIdToken);
+  let decodedToken;
+
+  try {
+    decodedToken = await verifyFirebaseIdToken(payload.firebaseIdToken);
+  } catch (_error) {
+    return res.status(401).json({ message: "Invalid or expired OTP token. Please request OTP again." });
+  }
+
   const normalizedFromToken = normalizeMobileNumber(decodedToken.phone_number || "");
 
   if (!normalizedFromToken || normalizedFromToken !== normalizedIdentifier) {
