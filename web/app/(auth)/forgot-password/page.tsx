@@ -43,7 +43,7 @@ export default function ForgotPasswordPage() {
   const [captchaScriptLoaded, setCaptchaScriptLoaded] = useState(false);
   const captchaContainerRef = useRef<HTMLDivElement>(null);
 
-  const recaptchaSiteKey = "6Lc-s44sAAAAAOjfF7ETkYoCaaAcCrj_e8rk_Fyk";
+  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "";
 
   // Load reCAPTCHA script
   useEffect(() => {

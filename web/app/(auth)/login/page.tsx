@@ -47,8 +47,8 @@ export default function LoginPage() {
   const [captchaScriptLoaded, setCaptchaScriptLoaded] = useState(false);
   const captchaContainerRef = useRef<HTMLDivElement>(null);
   
-  const recaptchaSiteKey = "6Lc-s44sAAAAAOjfF7ETkYoCaaAcCrj_e8rk_Fyk";
-  const shouldRenderCaptcha = mode === "register";
+  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || "";
+  const shouldRenderCaptcha = mode === "register" && Boolean(recaptchaSiteKey);
 
   // Load reCAPTCHA script
   useEffect(() => {
