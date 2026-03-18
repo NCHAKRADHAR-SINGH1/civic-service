@@ -53,7 +53,32 @@ export async function listModerationQueue(req, res) {
   }
 
   // Debug: log what location we're filtering by
-  console.log("Admin location filter:", locationFilter);
+  console.log("Admin location filter:", {
+    country: locationFilter.country.equals,
+    state: locationFilter.state.equals,
+    district: locationFilter.district.equals,
+    cityVillage: locationFilter.cityVillage.equals,
+  });
+
+  // First, get ALL issues in this location to debug
+  const allIssuesInLocation = await prisma.problem.findMany({
+    where: locationFilter,
+    select: {
+      id: true,
+      title: true,
+      country: true,
+      state: true,
+      district: true,
+      cityVillage: true,
+      status: true,
+    },
+  });
+
+  console.log(`Found ${allIssuesInLocation.length} total issues in admin location:`, allIssuesInLocation.map(i => ({ 
+    title: i.title, 
+    location: `${i.cityVillage}, ${i.district}, ${i.state}`,
+    status: i.status
+  })));
 
   // Show ALL issues in this location (both unresolved and resolved) for admin moderation
   const posts = await prisma.problem.findMany({
@@ -70,7 +95,7 @@ export async function listModerationQueue(req, res) {
     orderBy: [{ reports: { _count: "desc" } }, { createdAt: "desc" }],
   });
 
-  console.log(`Found ${posts.length} issues for admin ${admin.mobile}`);
+  console.log(`Returning ${posts.length} issues for admin ${admin.mobile}`);
 
   return res.json(posts);
 }
