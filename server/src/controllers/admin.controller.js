@@ -104,6 +104,7 @@ export async function resolveIssue(req, res) {
     return res.status(404).json({ message: "Issue not found in your assigned location" });
   }
 
+  // Only admins can add resolution proof images
   const updated = await prisma.problem.update({
     where: { id },
     data: {
@@ -118,7 +119,7 @@ export async function resolveIssue(req, res) {
     action: AuditAction.ISSUE_RESOLVED,
     entityType: "PROBLEM",
     entityId: updated.id,
-    summary: `${req.user.mobile || "Unknown admin"} resolved issue ${updated.id}`,
+    summary: `${req.user.mobile || "Unknown admin"} resolved issue ${updated.id} with ${payload.resolutionProofImages.length} proof image(s)`,
   });
 
   return res.json(updated);

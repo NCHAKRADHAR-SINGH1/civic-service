@@ -157,6 +157,8 @@ export async function listIssues(req, res) {
   return res.json(
     issues.map((i) => ({
       ...i,
+      // resolutionProofImages added by admins are visible to all citizens
+      // Citizens cannot modify issues - only admins via resolveIssue() endpoint
       currentUserUpvoted: i.upvotes.length > 0,
       isInUserLocation: isSameLocation(i, user),
     }))
