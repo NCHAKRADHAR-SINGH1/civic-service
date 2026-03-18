@@ -20,11 +20,15 @@ const configuredOrigins = (process.env.CORS_ORIGIN || "http://localhost:3000,htt
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+console.log("CORS_ORIGIN env:", process.env.CORS_ORIGIN);
+console.log("Configured origins:", configuredOrigins);
+
 app.set("trust proxy", 1);
 
 app.use(helmet());
 app.use(cors({
   origin(origin, callback) {
+    console.log("CORS check - incoming origin:", origin, "allowed:", configuredOrigins.includes(origin));
     if (!origin || configuredOrigins.includes(origin)) {
       callback(null, true);
       return;
