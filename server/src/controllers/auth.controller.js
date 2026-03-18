@@ -123,30 +123,37 @@ export async function registerWithPassword(req, res) {
       });
     }
   } else {
-    user = await prisma.user.findFirst({ where: { mobile: normalizedIdentifier } });
+    try {
+      user = await prisma.user.findFirst({ where: { mobile: normalizedIdentifier } });
 
-    if (user?.passwordHash) {
-      return res.status(409).json({ message: "Account already exists. Please login with your password." });
-    }
+      if (user?.passwordHash) {
+        return res.status(409).json({ message: "Account already exists. Please login with your password." });
+      }
 
-    const nextPasswordHash = hashPassword(payload.password);
+      const nextPasswordHash = hashPassword(payload.password);
 
-    if (user) {
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          passwordHash: nextPasswordHash,
-          authMethod: AuthMethod.PASSWORD,
-        },
-      });
-    } else {
-      user = await prisma.user.create({
-        data: {
-          authMethod: AuthMethod.PASSWORD,
-          mobile: normalizedIdentifier,
-          passwordHash: nextPasswordHash,
-        },
-      });
+      if (user) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            passwordHash: nextPasswordHash,
+            authMethod: AuthMethod.PASSWORD,
+          },
+        });
+      } else {
+        console.log("Creating new user with mobile:", normalizedIdentifier);
+        user = await prisma.user.create({
+          data: {
+            authMethod: AuthMethod.PASSWORD,
+            mobile: normalizedIdentifier,
+            passwordHash: nextPasswordHash,
+          },
+        });
+        console.log("User created:", user.id);
+      }
+    } catch (dbError) {
+      console.error("Database error during registration:", dbError.message, dbError.code);
+      throw dbError;
     }
   }
 
