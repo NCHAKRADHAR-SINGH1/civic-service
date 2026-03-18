@@ -283,7 +283,7 @@ Role behavior in production:
 - Add background jobs and analytics
 
 
-## Project Done By-
+## Project Done By
 - N Chakradhar Singh
 - K Gagan Rohith
 - Kakarla Gnana Sathwick
