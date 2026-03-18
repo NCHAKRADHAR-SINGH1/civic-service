@@ -306,7 +306,13 @@ export async function setUserRole(req, res) {
       return res.status(403).json({ message: "Invalid admin code. Use civic_service_state_district_city format." });
     }
 
-    adminLocation = parsedSecretCode.location;
+    // Normalize admin location values to lowercase for consistency with citizen locations
+    adminLocation = {
+      country: parsedSecretCode.location.country.toLowerCase(),
+      state: parsedSecretCode.location.state.toLowerCase(),
+      district: parsedSecretCode.location.district.toLowerCase(),
+      cityVillage: parsedSecretCode.location.cityVillage.toLowerCase(),
+    };
   }
 
   const updated = isDemoMode()

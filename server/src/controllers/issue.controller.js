@@ -76,6 +76,14 @@ export async function createIssue(req, res) {
     return res.status(400).json({ message: "Set primary location before posting" });
   }
 
+  // Normalize location to lowercase for consistency
+  const normalizedLocation = {
+    country: user.country.toLowerCase(),
+    state: user.state.toLowerCase(),
+    district: user.district.toLowerCase(),
+    cityVillage: user.cityVillage.toLowerCase(),
+  };
+
   const issue = await prisma.problem.create({
     data: {
       title: payload.title,
@@ -83,7 +91,7 @@ export async function createIssue(req, res) {
       category: payload.category,
       imageUrl: payload.imageUrl,
       departmentTag: payload.departmentTag,
-      ...userLocationFilter(user),
+      ...normalizedLocation,
       userId: user.id,
     },
   });
