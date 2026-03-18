@@ -120,8 +120,8 @@ export async function listIssues(req, res) {
     return res.status(400).json({ message: "Set primary location before viewing dashboard" });
   }
 
+  // Show ALL issues regardless of location, but flag which are in user's location
   const where = {
-    ...locationWhereFilterInsensitive(userLocationFilter(user)),
     ...(query.category ? { category: query.category } : {}),
     ...(query.q
       ? {
@@ -165,10 +165,15 @@ export async function listIssues(req, res) {
 
 export async function upvoteIssue(req, res) {
   const { id } = req.params;
-  const issue = await getIssueForUserLocation(id, req.user);
+  const issue = await prisma.problem.findUnique({ where: { id } });
 
   if (!issue) {
-    return res.status(404).json({ message: "Issue not found in your location" });
+    return res.status(404).json({ message: "Issue not found" });
+  }
+
+  // Only allow upvoting issues in user's location
+  if (!isSameLocation(issue, req.user)) {
+    return res.status(403).json({ message: "Can only upvote issues in your location" });
   }
 
   if (issue.status === "RESOLVED") {
@@ -208,10 +213,15 @@ export async function upvoteIssue(req, res) {
 export async function addComment(req, res) {
   const { id } = req.params;
   const payload = commentSchema.parse(req.body);
-  const issue = await getIssueForUserLocation(id, req.user);
+  const issue = await prisma.problem.findUnique({ where: { id } });
 
   if (!issue) {
-    return res.status(404).json({ message: "Issue not found in your location" });
+    return res.status(404).json({ message: "Issue not found" });
+  }
+
+  // Only allow commenting on issues in user's location
+  if (!isSameLocation(issue, req.user)) {
+    return res.status(403).json({ message: "Can only comment on issues in your location" });
   }
 
   const comment = await prisma.comment.create({
@@ -237,7 +247,12 @@ export async function addComment(req, res) {
 export async function reportSpam(req, res) {
   const { id } = req.params;
   const payload = spamSchema.parse(req.body);
-  const issue = await getIssueForUserLocation(id, req.user);
+  const issue = await prisma.problem.findUnique({ where: { id } });
+
+  // Only allow reporting issues in user's location
+  if (!issue || !isSameLocation(issue, req.user)) {
+    return res.status(403).json({ message: "Can only report issues in your location" });
+  }
 
   if (!issue) {
     return res.status(404).json({ message: "Issue not found in your location" });
