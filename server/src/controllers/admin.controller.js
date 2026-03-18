@@ -52,6 +52,10 @@ export async function listModerationQueue(req, res) {
     return res.status(400).json({ message: "Set your full admin location before opening moderation" });
   }
 
+  // Debug: log what location we're filtering by
+  console.log("Admin location filter:", locationFilter);
+
+  // Show ALL issues in this location (both unresolved and resolved) for admin moderation
   const posts = await prisma.problem.findMany({
     where: locationFilter,
     include: {
@@ -62,8 +66,11 @@ export async function listModerationQueue(req, res) {
         select: { id: true, reason: true, createdAt: true },
       },
     },
+    // Sort by: issues with reports first, then by most recent
     orderBy: [{ reports: { _count: "desc" } }, { createdAt: "desc" }],
   });
+
+  console.log(`Found ${posts.length} issues for admin ${admin.mobile}`);
 
   return res.json(posts);
 }
