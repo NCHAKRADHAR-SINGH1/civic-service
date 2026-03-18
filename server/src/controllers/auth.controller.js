@@ -2,17 +2,16 @@ import { AuthMethod, Prisma } from "@prisma/client";
 import { z } from "zod";
 import prisma from "../utils/prisma.js";
 import { clearAuthCookie, generateToken, serializeUser, setAuthCookie } from "../utils/auth.js";
-import { verifyFirebaseIdToken } from "../utils/firebase-admin.js";
 import { AuditAction, logAuditEvent } from "../utils/audit.js";
 import { normalizeMobileNumber, parseAdminSecretCode } from "../utils/admin-access.js";
 import { isOwnerMobile } from "../utils/admin-access.js";
 import { hashPassword, verifyPassword } from "../utils/password.js";
 import { verifyTurnstileToken } from "../utils/captcha.js";
 import { isDemoMode, getDemoUser, setDemoUser, updateDemoUser } from "../utils/demo.js";
+import { generateAndSendOtp, verifyOtp, clearOtp } from "../utils/otp.js";
 
-const verifyOtpSchema = z.object({
+const sendPasswordResetOtpSchema = z.object({
   identifier: z.string().min(10),
-  firebaseIdToken: z.string().min(20),
 });
 
 const registerWithPasswordSchema = z.object({
@@ -32,7 +31,7 @@ const loginWithPasswordSchema = z.object({
 
 const resetPasswordWithOtpSchema = z.object({
   identifier: z.string().min(10),
-  firebaseIdToken: z.string().min(20),
+  otp: z.string().min(6).max(6),
   password: z.string().min(8),
   confirmPassword: z.string().min(8),
 }).refine((value) => value.password === value.confirmPassword, {
@@ -209,6 +208,35 @@ export async function loginWithPassword(req, res) {
   return issueSession(res, user, `${user.mobile || "Unknown user"} authenticated with password`);
 }
 
+export async function sendPasswordResetOtp(req, res) {
+  const parsedPayload = sendPasswordResetOtpSchema.safeParse(req.body);
+
+  if (!parsedPayload.success) {
+    return res.status(400).json({ message: "Invalid identifier" });
+  }
+
+  const payload = parsedPayload.data;
+  const normalizedIdentifier = normalizeMobileNumber(payload.identifier);
+
+  // Check if user exists
+  const user = await prisma.user.findFirst({ where: { mobile: normalizedIdentifier } });
+
+  if (!user) {
+    return res.status(404).json({ message: "No account found for this mobile number" });
+  }
+
+  try {
+    const { code } = await generateAndSendOtp(normalizedIdentifier);
+    // Return code for development/testing; remove in production
+    return res.json({
+      message: "OTP sent to registered mobile number",
+      // code, // Uncomment only for testing
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Failed to send OTP" });
+  }
+}
+
 export async function resetPasswordWithOtp(req, res) {
   const parsedPayload = resetPasswordWithOtpSchema.safeParse(req.body);
 
@@ -218,18 +246,11 @@ export async function resetPasswordWithOtp(req, res) {
 
   const payload = parsedPayload.data;
   const normalizedIdentifier = normalizeMobileNumber(payload.identifier);
-  let decodedToken;
 
-  try {
-    decodedToken = await verifyFirebaseIdToken(payload.firebaseIdToken);
-  } catch (_error) {
-    return res.status(401).json({ message: "Invalid or expired OTP token. Please request OTP again." });
-  }
-
-  const normalizedFromToken = normalizeMobileNumber(decodedToken.phone_number || "");
-
-  if (!normalizedFromToken || normalizedFromToken !== normalizedIdentifier) {
-    return res.status(400).json({ message: "Firebase phone number mismatch" });
+  // Verify OTP
+  const isValidOtp = verifyOtp(normalizedIdentifier, payload.otp);
+  if (!isValidOtp) {
+    return res.status(401).json({ message: "Invalid or expired OTP. Request a new one." });
   }
 
   let user = await prisma.user.findFirst({ where: { mobile: normalizedIdentifier } });
@@ -249,64 +270,6 @@ export async function resetPasswordWithOtp(req, res) {
   user = await applyOwnerRoleIfEligible(user, normalizedIdentifier);
 
   return issueSession(res, user, `${user.mobile || "Unknown user"} reset password with OTP`);
-}
-
-export async function verifyOtp(req, res) {
-  const parsedPayload = verifyOtpSchema.safeParse(req.body);
-
-  if (!parsedPayload.success) {
-    return res.status(400).json({ message: "Invalid OTP verification payload" });
-  }
-
-  const payload = parsedPayload.data;
-  const normalizedIdentifier = normalizeMobileNumber(payload.identifier);
-  let decodedToken;
-
-  try {
-    decodedToken = await verifyFirebaseIdToken(payload.firebaseIdToken);
-  } catch (_error) {
-    return res.status(401).json({ message: "Invalid or expired OTP token. Please request OTP again." });
-  }
-
-  const normalizedFromToken = normalizeMobileNumber(decodedToken.phone_number || "");
-
-  if (!normalizedFromToken || normalizedFromToken !== normalizedIdentifier) {
-    return res.status(400).json({ message: "Firebase phone number mismatch" });
-  }
-
-  const authMethod = AuthMethod.MOBILE;
-
-  let user = await prisma.user.findFirst({
-    where: { mobile: normalizedIdentifier },
-  });
-
-  if (!user) {
-    try {
-      user = await prisma.user.create({
-        data: {
-          authMethod,
-          mobile: normalizedFromToken,
-        },
-      });
-    } catch (error) {
-      // Another concurrent request may have created the same user/mobile.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        user = await prisma.user.findFirst({
-          where: { mobile: normalizedIdentifier },
-        });
-      } else {
-        throw error;
-      }
-    }
-  }
-
-  if (!user) {
-    return res.status(500).json({ message: "Unable to create or load user session" });
-  }
-
-  user = await applyOwnerRoleIfEligible(user, normalizedIdentifier);
-
-  return issueSession(res, user, `${user.mobile || "Unknown user"} authenticated with phone OTP`);
 }
 
 export async function getSession(req, res) {

@@ -6,8 +6,8 @@ import {
 	logout,
 	registerWithPassword,
 	resetPasswordWithOtp,
+	sendPasswordResetOtp,
 	setUserRole,
-	verifyOtp,
 } from "../controllers/auth.controller.js";
 import { asyncHandler } from "../middlewares/async.middleware.js";
 import { requireAuth } from "../middlewares/auth.middleware.js";
@@ -32,8 +32,8 @@ const passwordAuthLimiter = rateLimit({
 
 router.post("/register-password", passwordAuthLimiter, asyncHandler(registerWithPassword));
 router.post("/login-password", passwordAuthLimiter, asyncHandler(loginWithPassword));
+router.post("/send-password-reset-otp", verifyOtpLimiter, asyncHandler(sendPasswordResetOtp));
 router.post("/reset-password-otp", verifyOtpLimiter, asyncHandler(resetPasswordWithOtp));
-router.post("/verify-otp", verifyOtpLimiter, asyncHandler(verifyOtp));
 router.get("/session", requireAuth, asyncHandler(getSession));
 router.post("/logout", requireAuth, asyncHandler(logout));
 router.put("/role", requireAuth, asyncHandler(setUserRole));

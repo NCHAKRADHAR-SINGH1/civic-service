@@ -1,14 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ConfirmationResult, RecaptchaVerifier, signInWithPhoneNumber, signOut } from "firebase/auth";
 import { apiFetch } from "@/lib/api";
-import { firebaseAuth } from "@/lib/firebase";
-import { User } from "@/lib/types";
-
-const isFirebaseTestMode = process.env.NEXT_PUBLIC_FIREBASE_USE_TEST_MODE === "true";
 
 function normalizeMobileNumber(identifier: string) {
   const digits = identifier.replace(/\D/g, "");
@@ -28,260 +23,228 @@ function normalizeMobileNumber(identifier: string) {
   return identifier.replace(/\s/g, "");
 }
 
-function getFirebaseErrorMessage(error: unknown) {
-  const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
-
-  switch (code) {
-    case "auth/invalid-phone-number":
-      return "Enter a valid phone number in +91XXXXXXXXXX format.";
-    case "auth/too-many-requests":
-      return "Too many attempts. Try again later.";
-    case "auth/captcha-check-failed":
-      return "reCAPTCHA verification failed. Complete the captcha and try again.";
-    case "auth/quota-exceeded":
-      return "OTP quota has been exceeded for this project.";
-    case "auth/invalid-app-credential":
-      return "App verification failed. Check authorized domains and reCAPTCHA.";
-    case "auth/missing-app-credential":
-      return "reCAPTCHA was not completed. Complete it and try again.";
-    case "auth/code-expired":
-      return "The OTP expired. Request a new one.";
-    case "auth/invalid-verification-code":
-      return "The OTP is invalid.";
-    default:
-      return error instanceof Error ? error.message : "Password reset failed.";
-  }
-}
-
 export default function ForgotPasswordPage() {
   const router = useRouter();
-  const recaptchaContainerRef = useRef<HTMLDivElement | null>(null);
-  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
   const [identifier, setIdentifier] = useState("");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
-  function clearRecaptchaVerifier() {
-    if (recaptchaVerifierRef.current) {
-      recaptchaVerifierRef.current.clear();
-      recaptchaVerifierRef.current = null;
-    }
-
-    if (recaptchaContainerRef.current) {
-      recaptchaContainerRef.current.innerHTML = "";
-    }
-  }
-
-  async function ensureRecaptchaVerifier(forceRecreate = false) {
-    const container = recaptchaContainerRef.current;
-
-    if (!container) {
-      throw new Error("reCAPTCHA container is not ready yet. Refresh and try again.");
-    }
-
-    if (forceRecreate) {
-      clearRecaptchaVerifier();
-    }
-
-    if (!recaptchaVerifierRef.current) {
-      container.innerHTML = "";
-      recaptchaVerifierRef.current = new RecaptchaVerifier(firebaseAuth, container, {
-        size: "normal",
-        "expired-callback": () => {
-          clearRecaptchaVerifier();
-          setError("reCAPTCHA expired. Please send OTP again.");
-        },
-      });
-      await recaptchaVerifierRef.current.render();
-    }
-
-    return recaptchaVerifierRef.current;
-  }
-
-  useEffect(() => {
-    firebaseAuth.useDeviceLanguage();
-    firebaseAuth.settings.appVerificationDisabledForTesting = isFirebaseTestMode;
-
-    void ensureRecaptchaVerifier().catch((err) => {
-      setError(getFirebaseErrorMessage(err));
-    });
-
-    return () => {
-      firebaseAuth.settings.appVerificationDisabledForTesting = false;
-      clearRecaptchaVerifier();
-    };
-  }, []);
-
-  const sendOtp = async (event: FormEvent) => {
-    event.preventDefault();
-    setError("");
+  async function handleSendOtp(e: FormEvent) {
+    e.preventDefault();
     setLoading(true);
+    setError("");
+    setSuccessMessage("");
 
     try {
       const normalizedIdentifier = normalizeMobileNumber(identifier);
+      const response = await apiFetch("/auth/send-password-reset-otp", {
+        method: "POST",
+        body: JSON.stringify({ identifier: normalizedIdentifier }),
+      });
 
-      if (!/^\+[1-9]\d{9,14}$/.test(normalizedIdentifier)) {
-        throw new Error("Enter a valid phone number in +91XXXXXXXXXX format.");
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "Failed to send OTP");
       }
 
-      let verifier = await ensureRecaptchaVerifier();
-
-      try {
-        const confirmation = await signInWithPhoneNumber(firebaseAuth, normalizedIdentifier, verifier);
-        setConfirmationResult(confirmation);
-        setIdentifier(normalizedIdentifier);
-        setSent(true);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-
-        if (
-          message.includes("reCAPTCHA client element has been removed")
-          || message.includes("reCAPTCHA Timeout")
-          || message.toLowerCase().includes("timeout")
-        ) {
-          verifier = await ensureRecaptchaVerifier(true);
-          const confirmation = await signInWithPhoneNumber(firebaseAuth, normalizedIdentifier, verifier);
-          setConfirmationResult(confirmation);
-          setIdentifier(normalizedIdentifier);
-          setSent(true);
-        } else {
-          throw err;
-        }
-      }
+      setSent(true);
+      setSuccessMessage("OTP sent to your registered mobile number");
     } catch (err) {
-      setError(getFirebaseErrorMessage(err));
+      setError(err instanceof Error ? err.message : "Failed to send OTP");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const resetPassword = async (event: FormEvent) => {
-    event.preventDefault();
+  async function handleResetPassword(e: FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
 
-    if (!confirmationResult) {
-      setError("OTP session expired. Please send OTP again.");
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match");
+      setLoading(false);
       return;
     }
 
     if (newPassword.length < 8) {
-      setError("New password must be at least 8 characters.");
+      setError("Password must be at least 8 characters");
+      setLoading(false);
       return;
     }
-
-    if (newPassword !== confirmPassword) {
-      setError("Password and confirm password must match.");
-      return;
-    }
-
-    setError("");
-    setLoading(true);
 
     try {
-      const credential = await confirmationResult.confirm(otp);
-      const firebaseIdToken = await credential.user.getIdToken();
-
-      const response = await apiFetch<{ user: User }>("/auth/reset-password-otp", {
+      const normalizedIdentifier = normalizeMobileNumber(identifier);
+      const response = await apiFetch("/auth/reset-password-otp", {
         method: "POST",
-        body: {
-          identifier,
-          firebaseIdToken,
+        body: JSON.stringify({
+          identifier: normalizedIdentifier,
+          otp,
           password: newPassword,
           confirmPassword,
-        },
+        }),
       });
 
-      await signOut(firebaseAuth);
-
-      if (response.user.role === "OWNER") {
-        router.push("/owner");
-      } else if (!response.user.role) {
-        router.push("/role");
-      } else if (!response.user.location?.country) {
-        router.push("/location");
-      } else {
-        router.push("/dashboard");
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "Failed to reset password");
       }
+
+      setSuccessMessage("Password reset successfully! Redirecting to dashboard...");
+      setTimeout(() => router.push("/dashboard"), 2000);
     } catch (err) {
-      setError(getFirebaseErrorMessage(err));
+      setError(err instanceof Error ? err.message : "Failed to reset password");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
-    <main className="mx-auto max-w-xl">
-      <section className="card p-6 sm:p-8">
-        <h2 className="mb-2 text-3xl font-semibold">Forgot password</h2>
-        <p className="mb-5 text-sm text-[var(--muted)]">OTP is used only on this page to reset your password.</p>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-b from-blue-50 to-white p-4">
+      <div className="w-full max-w-md">
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <h1 className="text-2xl font-bold text-center mb-2">Reset Password</h1>
+          <p className="text-center text-gray-600 mb-6">
+            Enter your mobile number to receive an OTP
+          </p>
 
-        <form className="space-y-4" onSubmit={sent ? resetPassword : sendOtp}>
-          <input
-            className="input"
-            placeholder="+91XXXXXXXXXX"
-            value={identifier}
-            onChange={(event) => setIdentifier(event.target.value)}
-            required
-            inputMode="tel"
-            autoComplete="tel"
-          />
-
-          {sent && (
-            <>
-              <input
-                className="input"
-                placeholder="6-digit OTP"
-                value={otp}
-                onChange={(event) => setOtp(event.target.value)}
-                required
-              />
-              <input
-                className="input"
-                type="password"
-                placeholder="New password"
-                value={newPassword}
-                onChange={(event) => setNewPassword(event.target.value)}
-                required
-                minLength={8}
-                autoComplete="new-password"
-              />
-              <input
-                className="input"
-                type="password"
-                placeholder="Confirm new password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                required
-                minLength={8}
-                autoComplete="new-password"
-              />
-            </>
+          {error && (
+            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+              {error}
+            </div>
           )}
 
-          {error && <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/60 dark:text-red-300">{error}</p>}
+          {successMessage && (
+            <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+              {successMessage}
+            </div>
+          )}
 
-          <div className="space-y-2">
-            {!isFirebaseTestMode && <div ref={recaptchaContainerRef} />}
-            <p className="text-xs text-[var(--muted)]">
-              {isFirebaseTestMode
-                ? "Firebase test mode is active, so reCAPTCHA is hidden."
-                : "Complete reCAPTCHA and use the OTP sent to your phone."}
+          {!sent ? (
+            <form onSubmit={handleSendOtp} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mobile Number
+                </label>
+                <input
+                  type="tel"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder="+91 XXXXXXXXXX"
+                  disabled={loading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-400 transition"
+              >
+                {loading ? "Sending..." : "Send OTP"}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mobile Number
+                </label>
+                <input
+                  type="tel"
+                  value={identifier}
+                  disabled
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  OTP
+                </label>
+                <input
+                  type="text"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.slice(0, 6))}
+                  placeholder="Enter 6-digit OTP"
+                  maxLength={6}
+                  disabled={loading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Min 8 characters"
+                  disabled={loading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Confirm Password
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm your password"
+                  disabled={loading}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-green-600 text-white py-2 rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-400 transition"
+              >
+                {loading ? "Resetting..." : "Reset Password"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSent(false);
+                  setOtp("");
+                  setNewPassword("");
+                  setConfirmPassword("");
+                  setError("");
+                }}
+                disabled={loading}
+                className="w-full bg-gray-200 text-gray-700 py-2 rounded-lg font-medium hover:bg-gray-300 disabled:bg-gray-100 transition"
+              >
+                Back
+              </button>
+            </form>
+          )}
+
+          <div className="mt-6 text-center">
+            <p className="text-gray-600">
+              Remember your password?{" "}
+              <Link href="/login" className="text-blue-600 hover:underline font-medium">
+                Back to Login
+              </Link>
             </p>
           </div>
-
-          <button className="btn-primary w-full" type="submit" disabled={loading}>
-            {loading ? "Please wait..." : sent ? "Reset Password" : "Send OTP"}
-          </button>
-        </form>
-
-        <p className="mt-5 text-xs text-[var(--muted)]">
-          <Link href="/login" className="underline">Back to login</Link>
-        </p>
-      </section>
-    </main>
+        </div>
+      </div>
+    </div>
   );
 }
