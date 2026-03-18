@@ -28,12 +28,30 @@ app.set("trust proxy", 1);
 app.use(helmet());
 app.use(cors({
   origin(origin, callback) {
-    console.log("CORS check - incoming origin:", origin, "allowed:", configuredOrigins.includes(origin));
-    if (!origin || configuredOrigins.includes(origin)) {
+    console.log("CORS check - incoming origin:", origin);
+    
+    // Allow empty origin (server-to-server requests)
+    if (!origin) {
+      console.log("  allowed: true (no origin)");
       callback(null, true);
       return;
     }
 
+    // Check configured origins list
+    if (configuredOrigins.includes(origin)) {
+      console.log("  allowed: true (in configured list)");
+      callback(null, true);
+      return;
+    }
+
+    // Allow Vercel preview deployments: civic-service-wmfn-*.vercel.app
+    if (origin.match(/^https:\/\/civic-service-wmfn-[a-z0-9]+-n-chakradhar-singhs-projects\.vercel\.app$/)) {
+      console.log("  allowed: true (Vercel preview)");
+      callback(null, true);
+      return;
+    }
+
+    console.log("  allowed: false");
     callback(new Error("Origin not allowed by CORS"));
   },
   credentials: true,
