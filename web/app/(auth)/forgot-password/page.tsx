@@ -185,9 +185,6 @@ export default function ForgotPasswordPage() {
                   onChange={(e) => {
                     const newOtp = e.target.value.slice(0, 6);
                     setOtp(newOtp);
-                    if (newOtp.length === 6) {
-                      setTimeout(() => handleOtpComplete(), 300);
-                    }
                   }}
                   placeholder="Enter 6-digit OTP"
                   maxLength={6}
@@ -197,6 +194,15 @@ export default function ForgotPasswordPage() {
                   required
                 />
               </div>
+
+              <button
+                type="button"
+                onClick={handleOtpComplete}
+                disabled={loading || otp.length !== 6}
+                className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-400 transition"
+              >
+                {loading ? "Verifying..." : "Continue"}
+              </button>
 
               <button
                 type="button"
