@@ -29,7 +29,7 @@ export default function ForgotPasswordPage() {
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [sent, setSent] = useState(false);
+  const [step, setStep] = useState<"send" | "verify" | "reset">("send");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -47,12 +47,20 @@ export default function ForgotPasswordPage() {
         body: { identifier: normalizedIdentifier },
       });
 
-      setSent(true);
+      setStep("verify");
       setSuccessMessage("OTP sent to your registered mobile number");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send OTP");
     } finally {
       setLoading(false);
+    }
+  }
+
+  const handleOtpComplete = () => {
+    if (otp.length === 6) {
+      setStep("reset");
+      setError("");
+      setSuccessMessage("");
     }
   }
 
@@ -85,8 +93,8 @@ export default function ForgotPasswordPage() {
         },
       });
 
-      setSuccessMessage("Password reset successfully! Redirecting to dashboard...");
-      setTimeout(() => router.push("/dashboard"), 2000);
+      setSuccessMessage("Password reset successfully! Redirecting to login...");
+      setTimeout(() => router.push("/login"), 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to reset password");
     } finally {
@@ -103,7 +111,7 @@ export default function ForgotPasswordPage() {
             Enter your mobile number to receive an OTP
           </p>
 
-          {error && (
+          {!successMessage && error && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
               {error}
             </div>
@@ -115,7 +123,7 @@ export default function ForgotPasswordPage() {
             </div>
           )}
 
-          {!sent ? (
+          {step === "send" && (
             <form onSubmit={handleSendOtp} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -140,8 +148,10 @@ export default function ForgotPasswordPage() {
                 {loading ? "Sending..." : "Send OTP"}
               </button>
             </form>
-          ) : (
-            <form onSubmit={handleResetPassword} className="space-y-4">
+          )}
+
+          {step === "verify" && (
+            <form onSubmit={(e) => { e.preventDefault(); handleOtpComplete(); }} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Mobile Number
@@ -156,20 +166,44 @@ export default function ForgotPasswordPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  OTP
+                  OTP (6 digits)
                 </label>
                 <input
                   type="text"
                   value={otp}
-                  onChange={(e) => setOtp(e.target.value.slice(0, 6))}
+                  onChange={(e) => {
+                    const newOtp = e.target.value.slice(0, 6);
+                    setOtp(newOtp);
+                    if (newOtp.length === 6) {
+                      setTimeout(() => handleOtpComplete(), 300);
+                    }
+                  }}
                   placeholder="Enter 6-digit OTP"
                   maxLength={6}
                   disabled={loading}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoFocus
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-2xl tracking-widest"
                   required
                 />
               </div>
 
+              <button
+                type="button"
+                onClick={() => {
+                  setStep("send");
+                  setOtp("");
+                  setError("");
+                }}
+                disabled={loading}
+                className="w-full bg-gray-200 text-gray-700 py-2 rounded-lg font-medium hover:bg-gray-300 disabled:bg-gray-100 transition"
+              >
+                Back
+              </button>
+            </form>
+          )}
+
+          {step === "reset" && (
+            <form onSubmit={handleResetPassword} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   New Password
@@ -180,6 +214,7 @@ export default function ForgotPasswordPage() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Min 8 characters"
                   disabled={loading}
+                  autoFocus
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
@@ -211,8 +246,7 @@ export default function ForgotPasswordPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setSent(false);
-                  setOtp("");
+                  setStep("verify");
                   setNewPassword("");
                   setConfirmPassword("");
                   setError("");
