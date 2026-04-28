@@ -33,21 +33,24 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [displayOtp, setDisplayOtp] = useState<string | null>(null);
 
   async function handleSendOtp(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
     setSuccessMessage("");
+    setDisplayOtp(null);
 
     try {
       const normalizedIdentifier = normalizeMobileNumber(identifier);
-      await apiFetch("/auth/send-password-reset-otp", {
+      const response = await apiFetch<{ message: string; code?: string }>("/auth/send-password-reset-otp", {
         method: "POST",
         body: { identifier: normalizedIdentifier },
       });
 
       setStep("verify");
+      setDisplayOtp(response.code || null);
       setSuccessMessage("OTP sent to your registered mobile number");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send OTP");
@@ -163,6 +166,14 @@ export default function ForgotPasswordPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600"
                 />
               </div>
+
+              {displayOtp && (
+                <div className="p-4 bg-blue-50 border-2 border-blue-300 rounded-lg text-center">
+                  <p className="text-xs text-gray-600 mb-2">Your OTP (for testing):</p>
+                  <p className="text-3xl font-bold text-blue-600 tracking-widest">{displayOtp}</p>
+                  <p className="text-xs text-gray-500 mt-2">Enter this code below</p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

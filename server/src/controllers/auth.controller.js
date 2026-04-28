@@ -229,7 +229,7 @@ export async function sendPasswordResetOtp(req, res) {
     // Return code for development/testing; remove in production
     return res.json({
       message: "OTP sent to registered mobile number",
-      // code, // Uncomment only for testing
+      code, // For testing/demo without SMS service
     });
   } catch (error) {
     return res.status(500).json({ message: error.message || "Failed to send OTP" });
